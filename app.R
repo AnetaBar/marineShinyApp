@@ -1,7 +1,9 @@
 library(shiny)
 library(leaflet)
 library(dplyr)
-ships <- read.csv(file = "ships.csv")
+library(geosphere)
+library(data.table)
+ships <- read.csv(file = "ships.csv", stringsAsFactors=FALSE)
 
 
 # Define UI ----
@@ -17,7 +19,7 @@ ui <- fluidPage(
     mainPanel(
       h3("A map"),
       leafletOutput("mymap",height = 500),
-      p("The longest distance")
+      textOutput("lonLatValues")
     )
   )
 )
@@ -34,11 +36,32 @@ server <- function(input, output, session) {
   })
   
   output$mymap <- renderLeaflet({
-    m <- leaflet() %>%
+    maximumDistanceRow <- calculateMaximumDistance(input$vesselName)
+    m <- leaflet(maximumDistanceRow) %>%
       addTiles() %>%
-      setView(lng=18.580730, lat=54.387248 , zoom=10)
+      addMarkers(lng = c(maximumDistanceRow$LON, maximumDistanceRow$LON_TO), lat=c(maximumDistanceRow$LAT, maximumDistanceRow$LAT_TO))
     m
   })
+  
+  output$lonLatValues <- renderText({
+    # if (!is.null(input$vesselName)) {
+      maximumDistanceRow <- calculateMaximumDistance(input$vesselName)
+      paste("max", maximumDistanceRow$DISTANCE, maximumDistanceRow$LON, maximumDistanceRow$LAT, maximumDistanceRow$LON_TO, maximumDistanceRow$LAT_TO)
+    # } else {
+      # paste("Please select a vessel to find the longest observed distance.")
+    # }
+  })
+  
+  calculateMaximumDistance <- function(vesselName) {
+    # if (!is.null(vesselName)) {
+      singleShipDf <- subset(ships, SHIPNAME == vesselName, select = c(LON, LAT, DATETIME, SHIP_ID))
+      setDT(singleShipDf)
+      singleShipDf[, `:=`(LON_TO = shift(LON, type = "lead"), LAT_TO = shift(LAT, type = "lead"))]
+      singleShipDf$DISTANCE <- distVincentyEllipsoid(singleShipDf[,1:2], singleShipDf[,5:6])
+      maxDistanceRow <- singleShipDf[singleShipDf$DISTANCE == max(singleShipDf$DISTANCE, na.rm = TRUE),]
+      return (maxDistanceRow)
+    # }
+  }
 }
 
 # Run the app ----
